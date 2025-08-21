@@ -2,9 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/database');
 const { body, validationResult } = require('express-validator');
+const { authenticateToken } = require('../middleware/auth');
 
-// Get all users
-router.get('/', async (req, res) => {
+// Get all users (protected route)
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const [rows] = await pool.execute('SELECT id, name, email, created_at FROM users');
     res.json(rows);
@@ -14,8 +15,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get user by ID
-router.get('/:id', async (req, res) => {
+// Get user by ID (protected route)
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const [rows] = await pool.execute(
       'SELECT id, name, email, created_at FROM users WHERE id = ?',
@@ -33,8 +34,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create new user
-router.post('/', [
+// Create new user (protected route)
+router.post('/', authenticateToken, [
   body('name').notEmpty().withMessage('Name is required'),
   body('email').isEmail().withMessage('Valid email is required'),
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
@@ -75,8 +76,8 @@ router.post('/', [
   }
 });
 
-// Update user
-router.put('/:id', [
+// Update user (protected route)
+router.put('/:id', authenticateToken, [
   body('name').optional().notEmpty().withMessage('Name cannot be empty'),
   body('email').optional().isEmail().withMessage('Valid email is required')
 ], async (req, res) => {
@@ -105,8 +106,8 @@ router.put('/:id', [
   }
 });
 
-// Delete user
-router.delete('/:id', async (req, res) => {
+// Delete user (protected route)
+router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const [result] = await pool.execute(
       'DELETE FROM users WHERE id = ?',

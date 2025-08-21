@@ -28,6 +28,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use('/api/health', require('./routes/health'));
+app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/room-groups', require('./routes/roomGroups'));
 app.use('/api/room-types', require('./routes/roomTypes'));
