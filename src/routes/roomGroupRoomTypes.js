@@ -297,14 +297,38 @@ router.post('/bulk-assign', async (req, res) => {
     await connection.beginTransaction();
     
     try {
-      // Remove existing relationships for this room group
-      await connection.execute(
-        'DELETE FROM RoomGroupRoomType WHERE room_group_id = ?',
+      // Get existing relationships for this room group
+      const [existingRelationships] = await connection.execute(
+        'SELECT room_type_id FROM RoomGroupRoomType WHERE room_group_id = ?',
         [room_group_id]
       );
       
-      // Insert new relationships
-      for (const room_type_id of room_type_ids) {
+      const existingRoomTypeIds = existingRelationships.map(rel => rel.room_type_id);
+      const newRoomTypeIds = room_type_ids.filter(id => !existingRoomTypeIds.includes(id));
+      const duplicateRoomTypeIds = room_type_ids.filter(id => existingRoomTypeIds.includes(id));
+      
+      // Check for duplicates and provide feedback
+      if (duplicateRoomTypeIds.length > 0) {
+        await connection.rollback();
+        
+        // Get names of duplicate room types for better error message
+        const [duplicateTypes] = await connection.execute(`
+          SELECT type_name FROM RoomTypes WHERE room_type_id IN (?)
+        `, [duplicateRoomTypeIds]);
+        
+        const duplicateNames = duplicateTypes.map(type => type.type_name).join(', ');
+        
+        await connection.end();
+        
+        return res.status(400).json({
+          success: false,
+          message: `The following room types are already assigned to this room group: ${duplicateNames}`,
+          duplicates: duplicateRoomTypeIds
+        });
+      }
+      
+      // Insert new relationships (only non-duplicates)
+      for (const room_type_id of newRoomTypeIds) {
         await connection.execute(`
           INSERT INTO RoomGroupRoomType (room_group_id, room_type_id)
           VALUES (?, ?)
@@ -331,7 +355,9 @@ router.post('/bulk-assign', async (req, res) => {
       
       res.json({
         success: true,
-        message: 'Room types successfully assigned to room group',
+        message: newRoomTypeIds.length > 0 
+          ? `${newRoomTypeIds.length} room type(s) successfully assigned to room group`
+          : 'No new room types to assign',
         data: updatedRelationships
       });
     } catch (error) {
