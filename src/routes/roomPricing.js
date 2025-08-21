@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mysql = require('mysql2/promise');
 const { body, validationResult } = require('express-validator');
+const { authenticateToken } = require('../middleware/auth');
 
 // Database connection
 const dbConfig = {
@@ -25,7 +26,7 @@ const validateRoomPricing = [
 ];
 
 // GET all room pricing with relationship details
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const connection = await mysql.createConnection(dbConfig);
     
@@ -68,7 +69,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET room pricing by ID
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const connection = await mysql.createConnection(dbConfig);
@@ -119,7 +120,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // GET pricing by room group room type ID
-router.get('/relationship/:relationshipId', async (req, res) => {
+router.get('/relationship/:relationshipId', authenticateToken, async (req, res) => {
   try {
     const { relationshipId } = req.params;
     const connection = await mysql.createConnection(dbConfig);
@@ -164,7 +165,7 @@ router.get('/relationship/:relationshipId', async (req, res) => {
 });
 
 // GET pricing by hotel
-router.get('/hotel/:hotel', async (req, res) => {
+router.get('/hotel/:hotel', authenticateToken, async (req, res) => {
   try {
     const { hotel } = req.params;
     const connection = await mysql.createConnection(dbConfig);
@@ -209,7 +210,7 @@ router.get('/hotel/:hotel', async (req, res) => {
 });
 
 // GET pricing by occupancy
-router.get('/occupancy/:occupancy', async (req, res) => {
+router.get('/occupancy/:occupancy', authenticateToken, async (req, res) => {
   try {
     const { occupancy } = req.params;
     const connection = await mysql.createConnection(dbConfig);
@@ -254,7 +255,7 @@ router.get('/occupancy/:occupancy', async (req, res) => {
 });
 
 // GET pricing with filters
-router.get('/filter', async (req, res) => {
+router.get('/filter', authenticateToken, async (req, res) => {
   try {
     const { hotel, occupancy, day_of_week, month, holiday_flag, start_date, end_date } = req.query;
     const connection = await mysql.createConnection(dbConfig);
@@ -339,7 +340,7 @@ router.get('/filter', async (req, res) => {
 });
 
 // POST create new room pricing
-router.post('/', validateRoomPricing, async (req, res) => {
+router.post('/', authenticateToken, validateRoomPricing, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -417,7 +418,7 @@ router.post('/', validateRoomPricing, async (req, res) => {
 });
 
 // PUT update room pricing
-router.put('/:id', validateRoomPricing, async (req, res) => {
+router.put('/:id', authenticateToken, validateRoomPricing, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -504,7 +505,7 @@ router.put('/:id', validateRoomPricing, async (req, res) => {
 });
 
 // DELETE room pricing
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const connection = await mysql.createConnection(dbConfig);

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mysql = require('mysql2/promise');
 const { body, validationResult } = require('express-validator');
+const { authenticateToken } = require('../middleware/auth');
 
 // Database connection
 const dbConfig = {
@@ -18,7 +19,7 @@ const validateRoomGroupRoomType = [
 ];
 
 // GET all room group room type relationships
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const connection = await mysql.createConnection(dbConfig);
     
@@ -57,7 +58,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET room group room type by ID
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const connection = await mysql.createConnection(dbConfig);
@@ -100,7 +101,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // GET room types for a specific room group
-router.get('/group/:roomGroupId', async (req, res) => {
+router.get('/group/:roomGroupId', authenticateToken, async (req, res) => {
   try {
     const { roomGroupId } = req.params;
     const connection = await mysql.createConnection(dbConfig);
@@ -136,7 +137,7 @@ router.get('/group/:roomGroupId', async (req, res) => {
 });
 
 // GET room groups for a specific room type
-router.get('/type/:roomTypeId', async (req, res) => {
+router.get('/type/:roomTypeId', authenticateToken, async (req, res) => {
   try {
     const { roomTypeId } = req.params;
     const connection = await mysql.createConnection(dbConfig);
@@ -171,7 +172,7 @@ router.get('/type/:roomTypeId', async (req, res) => {
 });
 
 // POST create new room group room type relationship
-router.post('/', validateRoomGroupRoomType, async (req, res) => {
+router.post('/', authenticateToken, validateRoomGroupRoomType, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -238,7 +239,7 @@ router.post('/', validateRoomGroupRoomType, async (req, res) => {
 });
 
 // DELETE room group room type relationship
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const connection = await mysql.createConnection(dbConfig);
@@ -280,7 +281,7 @@ router.delete('/:id', async (req, res) => {
 });
 
 // POST bulk assign room types to room group
-router.post('/bulk-assign', async (req, res) => {
+router.post('/bulk-assign', authenticateToken, async (req, res) => {
   try {
     const { room_group_id, room_type_ids } = req.body;
     

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mysql = require('mysql2/promise');
 const { body, validationResult } = require('express-validator');
+const { authenticateToken } = require('../middleware/auth');
 
 // Database connection
 const dbConfig = {
@@ -35,7 +36,7 @@ const generateReservationCode = () => {
 };
 
 // GET all reservations with guest and room details
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const connection = await mysql.createConnection(dbConfig);
     
@@ -93,7 +94,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET single reservation by ID
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const connection = await mysql.createConnection(dbConfig);
@@ -141,7 +142,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST create new reservation
-router.post('/', validateReservation, async (req, res) => {
+router.post('/', authenticateToken, validateReservation, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -225,7 +226,7 @@ router.post('/', validateReservation, async (req, res) => {
 });
 
 // PUT update reservation
-router.put('/:id', validateReservation, async (req, res) => {
+router.put('/:id', authenticateToken, validateReservation, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -323,7 +324,7 @@ router.put('/:id', validateReservation, async (req, res) => {
 });
 
 // DELETE reservation (soft delete by setting status to cancelled)
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const connection = await mysql.createConnection(dbConfig);
@@ -365,7 +366,7 @@ router.delete('/:id', async (req, res) => {
 });
 
 // GET rooms list for dropdown
-router.get('/rooms/list', async (req, res) => {
+router.get('/rooms/list', authenticateToken, async (req, res) => {
   try {
     const connection = await mysql.createConnection(dbConfig);
     

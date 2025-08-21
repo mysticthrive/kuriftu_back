@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mysql = require('mysql2/promise');
+const { authenticateToken } = require('../middleware/auth');
 
 // Database connection
 const dbConfig = {
@@ -13,7 +14,7 @@ const dbConfig = {
 
 
 // GET all room type images with relationship details
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const connection = await mysql.createConnection(dbConfig);
     
@@ -52,7 +53,7 @@ router.get('/', async (req, res) => {
 });
 
 // PUT set image as primary
-router.put('/:id/set-primary', async (req, res) => {
+router.put('/:id/set-primary', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const connection = await mysql.createConnection(dbConfig);
@@ -96,7 +97,7 @@ router.put('/:id/set-primary', async (req, res) => {
 });
 
 // DELETE room type image
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const connection = await mysql.createConnection(dbConfig);
@@ -131,7 +132,7 @@ router.delete('/:id', async (req, res) => {
 });
 
 // POST create new room type image with file upload
-router.post('/upload', async (req, res) => {
+router.post('/upload', authenticateToken, async (req, res) => {
   try {
     const { room_group_room_type_id, image_url, alt_text, is_primary } = req.body;
     
@@ -209,7 +210,7 @@ router.post('/upload', async (req, res) => {
 });
 
 // PUT update room type image with file upload
-router.put('/:id/upload', async (req, res) => {
+router.put('/:id/upload', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { image_url, alt_text, is_primary } = req.body;
