@@ -134,6 +134,8 @@ router.put('/:id', authenticateToken, [
     const { name, email, role, is_active } = req.body;
     const userId = req.params.id;
     
+    console.log('Updating user:', userId, 'with data:', { name, email, role, is_active });
+    
     const connection = await mysql.createConnection(dbConfig);
     
     // Check if user exists
@@ -160,10 +162,42 @@ router.put('/:id', authenticateToken, [
       }
     }
     
-    const [result] = await connection.execute(
-      'UPDATE users SET name = COALESCE(?, name), email = COALESCE(?, email), role = COALESCE(?, role), is_active = COALESCE(?, is_active), updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [name, email, role, is_active, userId]
-    );
+    // Build dynamic update query based on provided fields
+    const updateFields = [];
+    const updateValues = [];
+    
+    if (name !== undefined) {
+      updateFields.push('name = ?');
+      updateValues.push(name);
+    }
+    
+    if (email !== undefined) {
+      updateFields.push('email = ?');
+      updateValues.push(email);
+    }
+    
+    if (role !== undefined) {
+      updateFields.push('role = ?');
+      updateValues.push(role);
+    }
+    
+    if (is_active !== undefined) {
+      updateFields.push('is_active = ?');
+      updateValues.push(is_active);
+    }
+    
+    // Always update the updated_at timestamp
+    updateFields.push('updated_at = CURRENT_TIMESTAMP');
+    
+    // Add the user ID for the WHERE clause
+    updateValues.push(userId);
+    
+    const updateQuery = `UPDATE users SET ${updateFields.join(', ')} WHERE id = ?`;
+    
+    console.log('Update query:', updateQuery);
+    console.log('Update values:', updateValues);
+    
+    const [result] = await connection.execute(updateQuery, updateValues);
     
     await connection.end();
     
