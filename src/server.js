@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const { testConnection } = require('./config/database');
 require('dotenv').config();
 
 const app = express();
@@ -38,6 +39,7 @@ app.use('/api/room-pricing', require('./routes/roomPricing'));
 app.use('/api/rooms', require('./routes/rooms'));
 app.use('/api/guests', require('./routes/guests'));
 app.use('/api/reservations', require('./routes/reservations'));
+app.use('/api/menu-permissions', require('./routes/menuPermissions'));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -53,7 +55,7 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });

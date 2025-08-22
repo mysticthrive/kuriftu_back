@@ -10,7 +10,7 @@ const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'kuriftur_Hayle'
+  database: process.env.DB_NAME || 'fullstack_app'
 };
 
 // JWT Secret
@@ -115,7 +115,7 @@ router.post('/login', validateLogin, async (req, res) => {
 
     // Find user by email
     const [users] = await connection.execute(
-      'SELECT id, name, email, password FROM users WHERE email = ?',
+      'SELECT id, name, email, password, role, is_active FROM users WHERE email = ?',
       [email]
     );
 
@@ -128,6 +128,15 @@ router.post('/login', validateLogin, async (req, res) => {
     }
 
     const user = users[0];
+
+    // Check if user is active
+    if (!user.is_active) {
+      await connection.end();
+      return res.status(401).json({
+        success: false,
+        message: 'Account is deactivated. Please contact administrator.'
+      });
+    }
 
     // Check password
     const isPasswordValid = await bcrypt.compare(password, user.password);
@@ -147,7 +156,6 @@ router.post('/login', validateLogin, async (req, res) => {
     );
 
     await connection.end();
-
     res.json({
       success: true,
       message: 'Login successful',
@@ -155,7 +163,8 @@ router.post('/login', validateLogin, async (req, res) => {
         user: {
           id: user.id,
           name: user.name,
-          email: user.email
+          email: user.email,
+          role: user.role
         },
         token
       }
@@ -186,7 +195,7 @@ router.get('/profile', async (req, res) => {
     const connection = await mysql.createConnection(dbConfig);
 
     const [users] = await connection.execute(
-      'SELECT id, name, email, created_at FROM users WHERE id = ?',
+      'SELECT id, name, email, role, created_at FROM users WHERE id = ?',
       [decoded.userId]
     );
 
@@ -255,7 +264,7 @@ router.put('/profile', [
 
     // Get updated user data
     const [users] = await connection.execute(
-      'SELECT id, name, email, created_at FROM users WHERE id = ?',
+      'SELECT id, name, email, role, created_at FROM users WHERE id = ?',
       [decoded.userId]
     );
 
