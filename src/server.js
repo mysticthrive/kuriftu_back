@@ -57,6 +57,7 @@ app.use('/api/rooms', require('./routes/rooms'));
 app.use('/api/guests', require('./routes/guests'));
 app.use('/api/reservations', require('./routes/reservations'));
 app.use('/api/menu-permissions', require('./routes/menuPermissions'));
+app.use('/api/gift-cards', require('./routes/giftCards'));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
