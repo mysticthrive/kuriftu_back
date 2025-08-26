@@ -20,11 +20,53 @@ const validateMenuPermission = [
 ];
 
 // GET all menu items with permissions for all roles
+// router.get('/menu-items', authenticateToken, async (req, res) => {
+//   try {
+//     const connection = await mysql.createConnection(dbConfig);
+    
+//     const [rows] = await connection.execute(`
+//       SELECT 
+//         m.menu_id,
+//         m.label,
+//         m.icon,
+//         m.href,
+//         m.parent_id,
+//         m.sort_order,
+//         m.is_active,
+//         JSON_OBJECTAGG(
+//           r.role_name, 
+//           COALESCE(mp.can_view, FALSE)
+//         ) as permissions
+//       FROM menu_items m
+//       CROSS JOIN user_roles r
+//       LEFT JOIN menu_permissions mp ON m.menu_id = mp.menu_id AND r.id = mp.role_id
+//       WHERE m.is_active = TRUE
+//       GROUP BY m.menu_id, m.label, m.icon, m.href, m.parent_id, m.sort_order
+//       ORDER BY m.sort_order, m.label
+//     `);
+    
+//     await connection.end();
+    
+//     res.json({
+//       success: true,
+//       data: rows
+//     });
+//   } catch (error) {
+//     console.error('Error fetching menu items:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Internal server error',
+//       error: error.message
+//     });
+//   }
+// });
+
 router.get('/menu-items', authenticateToken, async (req, res) => {
   try {
     const connection = await mysql.createConnection(dbConfig);
     
-    const [rows] = await connection.execute(`
+    // First, get all menu items
+    const [menuItems] = await connection.execute(`
       SELECT 
         m.menu_id,
         m.label,
@@ -32,24 +74,44 @@ router.get('/menu-items', authenticateToken, async (req, res) => {
         m.href,
         m.parent_id,
         m.sort_order,
-        m.is_active,
-        JSON_OBJECTAGG(
-          r.role_name, 
-          COALESCE(mp.can_view, FALSE)
-        ) as permissions
+        m.is_active
+      FROM menu_items m
+      WHERE m.is_active = TRUE
+      ORDER BY m.sort_order, m.label
+    `);
+    
+    // Then, get all permissions for each menu item
+    const [permissions] = await connection.execute(`
+      SELECT 
+        mp.menu_id,
+        r.role_name,
+        COALESCE(mp.can_view, FALSE) as can_view
       FROM menu_items m
       CROSS JOIN user_roles r
       LEFT JOIN menu_permissions mp ON m.menu_id = mp.menu_id AND r.id = mp.role_id
       WHERE m.is_active = TRUE
-      GROUP BY m.menu_id, m.label, m.icon, m.href, m.parent_id, m.sort_order
-      ORDER BY m.sort_order, m.label
     `);
+    
+    // Group permissions by menu_id
+    const permissionsMap = {};
+    permissions.forEach(perm => {
+      if (!permissionsMap[perm.menu_id]) {
+        permissionsMap[perm.menu_id] = {};
+      }
+      permissionsMap[perm.menu_id][perm.role_name] = perm.can_view;
+    });
+    
+    // Combine menu items with their permissions
+    const result = menuItems.map(item => ({
+      ...item,
+      permissions: permissionsMap[item.menu_id] || {}
+    }));
     
     await connection.end();
     
     res.json({
       success: true,
-      data: rows
+      data: result
     });
   } catch (error) {
     console.error('Error fetching menu items:', error);
