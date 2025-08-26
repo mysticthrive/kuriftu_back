@@ -1,8 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const { testConnection } = require('./config/database');
 require('dotenv').config();
 
 const app = express();
@@ -32,14 +30,7 @@ app.use(cors({
   credentials: true
 }));
 
-// Rate limiting - configurable via environment
-if (process.env.ENABLE_RATE_LIMIT !== 'false') {
-  const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: process.env.RATE_LIMIT_MAX ? parseInt(process.env.RATE_LIMIT_MAX) : 100
-  });
-  app.use(limiter);
-}
+console.log('🚫 Rate limiting disabled');
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
