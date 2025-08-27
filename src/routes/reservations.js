@@ -36,7 +36,7 @@ const generateReservationCode = () => {
 };
 
 // Calculate room price based on room_group_room_type_id and hotel
-const calculateRoomPrice = async (connection, roomGroupRoomTypeId, hotel) => {
+const calculateRoomPrice = async (connection, roomGroupRoomTypeId, hotel, checkInDate = null, checkOutDate = null) => {
   if (!roomGroupRoomTypeId) return 0;
   
   // Get room pricing for weekdays first, then weekends as fallback
@@ -46,22 +46,31 @@ const calculateRoomPrice = async (connection, roomGroupRoomTypeId, hotel) => {
     LIMIT 1
   `, [roomGroupRoomTypeId, hotel]);
   
+  let basePrice = 0;
   if (pricing.length > 0) {
-    return pricing[0].price;
+    basePrice = pricing[0].price;
+  } else {
+    // Fallback to weekends pricing
+    const [weekendPricing] = await connection.execute(`
+      SELECT price FROM RoomPricing 
+      WHERE room_group_room_type_id = ? AND hotel = ? AND day_of_week = 'weekends'
+      LIMIT 1
+    `, [roomGroupRoomTypeId, hotel]);
+    
+    if (weekendPricing.length > 0) {
+      basePrice = weekendPricing[0].price;
+    }
   }
   
-  // Fallback to weekends pricing
-  const [weekendPricing] = await connection.execute(`
-    SELECT price FROM RoomPricing 
-    WHERE room_group_room_type_id = ? AND hotel = ? AND day_of_week = 'weekends'
-    LIMIT 1
-  `, [roomGroupRoomTypeId, hotel]);
-  
-  if (weekendPricing.length > 0) {
-    return weekendPricing[0].price;
+  // If check-in and check-out dates are provided, calculate total for the stay
+  if (checkInDate && checkOutDate && basePrice > 0) {
+    const checkIn = new Date(checkInDate);
+    const checkOut = new Date(checkOutDate);
+    const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+    return basePrice * nights;
   }
   
-  return 0;
+  return basePrice;
 };
 
 // GET all reservations with guest and room details
@@ -222,28 +231,35 @@ router.post('/', authenticateToken, validateReservation, async (req, res) => {
     
     const room = roomDetails[0];
     
-    // Calculate total price based on room pricing
+    // Calculate total price based on room pricing and stay duration
     let totalPrice = 0;
     if (room.room_group_room_type_id) {
-      // Get room pricing for weekdays first, then weekends as fallback
-      const [pricing] = await connection.execute(`
-        SELECT price FROM RoomPricing 
-        WHERE room_group_room_type_id = ? AND hotel = ? AND day_of_week = 'weekdays'
-        LIMIT 1
-      `, [room.room_group_room_type_id, room.hotel]);
+      // Calculate number of nights
+      const checkInDate = new Date(check_in_date);
+      const checkOutDate = new Date(check_out_date);
+      const nights = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
       
-      if (pricing.length > 0) {
-        totalPrice = pricing[0].price;
-      } else {
-        // Fallback to weekends pricing
-        const [weekendPricing] = await connection.execute(`
+      if (nights > 0) {
+        // Get room pricing for weekdays first, then weekends as fallback
+        const [pricing] = await connection.execute(`
           SELECT price FROM RoomPricing 
-          WHERE room_group_room_type_id = ? AND hotel = ? AND day_of_week = 'weekends'
+          WHERE room_group_room_type_id = ? AND hotel = ? AND day_of_week = 'weekdays'
           LIMIT 1
         `, [room.room_group_room_type_id, room.hotel]);
         
-        if (weekendPricing.length > 0) {
-          totalPrice = weekendPricing[0].price;
+        if (pricing.length > 0) {
+          totalPrice = pricing[0].price * nights;
+        } else {
+          // Fallback to weekends pricing
+          const [weekendPricing] = await connection.execute(`
+            SELECT price FROM RoomPricing 
+            WHERE room_group_room_type_id = ? AND hotel = ? AND day_of_week = 'weekends'
+            LIMIT 1
+          `, [room.room_group_room_type_id, room.hotel]);
+          
+          if (weekendPricing.length > 0) {
+            totalPrice = weekendPricing[0].price * nights;
+          }
         }
       }
     }
@@ -257,7 +273,7 @@ router.post('/', authenticateToken, validateReservation, async (req, res) => {
         reservation_code, guest_id, room_id, check_in_date, check_out_date,
         check_in_time, check_out_time, num_adults, num_children, children_ages,
         special_requests, total_price, status, payment_status, source
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       reservationCode, guest_id, room_id, check_in_date, check_out_date,
       check_in_time, check_out_time, num_adults, num_children, children_ages,
@@ -367,8 +383,8 @@ router.put('/:id', authenticateToken, validateReservation, async (req, res) => {
     
     const room = roomDetails[0];
     
-    // Calculate total price based on room pricing
-    const totalPrice = await calculateRoomPrice(connection, room.room_group_room_type_id, room.hotel);
+    // Calculate total price based on room pricing and stay duration
+    const totalPrice = await calculateRoomPrice(connection, room.room_group_room_type_id, room.hotel, check_in_date, check_out_date);
     
     // Update reservation
     await connection.execute(`
