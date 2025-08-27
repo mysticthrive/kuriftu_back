@@ -16,17 +16,27 @@ const dbConfig = {
 const validateRoomGroup = [
   body('group_name').trim().notEmpty().withMessage('Group name is required')
     .isLength({ max: 100 }).withMessage('Group name must be less than 100 characters'),
-  body('description').optional().trim()
+  body('description').optional().trim(),
+  body('hotel').notEmpty().withMessage('Hotel is required')
 ];
 
 // GET all room groups
 router.get('/', authenticateToken, async (req, res) => {
   try {
+    const { hotel } = req.query;
     const connection = await mysql.createConnection(dbConfig);
     
-    const [rows] = await connection.execute(
-      'SELECT * FROM RoomGroups ORDER BY created_at DESC'
-    );
+    let query = 'SELECT * FROM RoomGroups';
+    let params = [];
+    
+    if (hotel) {
+      query += ' WHERE hotel = ?';
+      params.push(hotel);
+    }
+    
+    query += ' ORDER BY created_at DESC';
+    
+    const [rows] = await connection.execute(query, params);
     
     await connection.end();
     
@@ -90,12 +100,12 @@ router.post('/', authenticateToken, validateRoomGroup, async (req, res) => {
       });
     }
 
-    const { group_name, description } = req.body;
+    const { group_name, description, hotel } = req.body;
     const connection = await mysql.createConnection(dbConfig);
     
     const [result] = await connection.execute(
-      'INSERT INTO RoomGroups (group_name, description) VALUES (?, ?)',
-      [group_name, description]
+      'INSERT INTO RoomGroups (group_name, description, hotel) VALUES (?, ?, ?)',
+      [group_name, description, hotel]
     );
     
     const [newRoomGroup] = await connection.execute(
@@ -133,7 +143,7 @@ router.put('/:id', authenticateToken, validateRoomGroup, async (req, res) => {
     }
 
     const { id } = req.params;
-    const { group_name, description } = req.body;
+    const { group_name, description, hotel } = req.body;
     const connection = await mysql.createConnection(dbConfig);
     
     // Check if room group exists
@@ -151,8 +161,8 @@ router.put('/:id', authenticateToken, validateRoomGroup, async (req, res) => {
     }
     
     await connection.execute(
-      'UPDATE RoomGroups SET group_name = ?, description = ? WHERE room_group_id = ?',
-      [group_name, description, id]
+      'UPDATE RoomGroups SET group_name = ?, description = ?, hotel = ? WHERE room_group_id = ?',
+      [group_name, description, hotel, id]
     );
     
     const [updatedRoomGroup] = await connection.execute(
