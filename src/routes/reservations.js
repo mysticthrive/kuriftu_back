@@ -25,7 +25,7 @@ const validateReservation = [
   body('status').optional().isIn(['confirmed', 'cancelled', 'completed']).withMessage('Invalid status'),
   body('payment_status').optional().isIn(['pending', 'paid', 'failed', 'refunded']).withMessage('Invalid payment status'),
   body('source').optional().isIn(['website', 'mobile_app', 'walk_in', 'agent', 'call_center']).withMessage('Invalid source'),
-  body('currency').optional().isString().withMessage('Currency must be a string')
+
 ];
 
 // Generate unique reservation code
@@ -33,6 +33,35 @@ const generateReservationCode = () => {
   const timestamp = Date.now().toString(36);
   const random = Math.random().toString(36).substr(2, 5);
   return `RES-${timestamp}-${random}`.toUpperCase();
+};
+
+// Calculate room price based on room_group_room_type_id and hotel
+const calculateRoomPrice = async (connection, roomGroupRoomTypeId, hotel) => {
+  if (!roomGroupRoomTypeId) return 0;
+  
+  // Get room pricing for weekdays first, then weekends as fallback
+  const [pricing] = await connection.execute(`
+    SELECT price FROM RoomPricing 
+    WHERE room_group_room_type_id = ? AND hotel = ? AND day_of_week = 'weekdays'
+    LIMIT 1
+  `, [roomGroupRoomTypeId, hotel]);
+  
+  if (pricing.length > 0) {
+    return pricing[0].price;
+  }
+  
+  // Fallback to weekends pricing
+  const [weekendPricing] = await connection.execute(`
+    SELECT price FROM RoomPricing 
+    WHERE room_group_room_type_id = ? AND hotel = ? AND day_of_week = 'weekends'
+    LIMIT 1
+  `, [roomGroupRoomTypeId, hotel]);
+  
+  if (weekendPricing.length > 0) {
+    return weekendPricing[0].price;
+  }
+  
+  return 0;
 };
 
 // GET all reservations with guest and room details
@@ -53,7 +82,7 @@ router.get('/', authenticateToken, async (req, res) => {
         r.children_ages,
         r.special_requests,
         r.total_price,
-        r.currency,
+
         r.status,
         r.payment_status,
         r.source,
@@ -72,8 +101,9 @@ router.get('/', authenticateToken, async (req, res) => {
       FROM Reservations r
       JOIN Guests g ON r.guest_id = g.guest_id
       JOIN Rooms rm ON r.room_id = rm.room_id
-      LEFT JOIN RoomTypes rt ON rm.room_type_id = rt.room_type_id
-      LEFT JOIN RoomGroups rg ON rm.room_group_id = rg.room_group_id
+      LEFT JOIN RoomGroupRoomType rgr ON rm.room_group_room_type_id = rgr.id
+      LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
+      LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
       ORDER BY r.created_at DESC
     `);
     
@@ -113,8 +143,9 @@ router.get('/:id', authenticateToken, async (req, res) => {
       FROM Reservations r
       JOIN Guests g ON r.guest_id = g.guest_id
       JOIN Rooms rm ON r.room_id = rm.room_id
-      LEFT JOIN RoomTypes rt ON rm.room_type_id = rt.room_type_id
-      LEFT JOIN RoomGroups rg ON rm.room_group_id = rg.room_group_id
+      LEFT JOIN RoomGroupRoomType rgr ON rm.room_group_room_type_id = rgr.id
+      LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
+      LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
       WHERE r.reservation_id = ?
     `, [id]);
     
@@ -167,10 +198,55 @@ router.post('/', authenticateToken, validateReservation, async (req, res) => {
       status = 'confirmed',
       payment_status = 'pending',
       source = 'website',
-      currency = 'ETB'
+
     } = req.body;
 
     const connection = await mysql.createConnection(dbConfig);
+    
+    // Get room details to find pricing
+    const [roomDetails] = await connection.execute(`
+      SELECT 
+        rm.hotel,
+        rm.room_group_room_type_id
+      FROM Rooms rm
+      WHERE rm.room_id = ?
+    `, [room_id]);
+    
+    if (roomDetails.length === 0) {
+      await connection.end();
+      return res.status(400).json({
+        success: false,
+        message: 'Room not found'
+      });
+    }
+    
+    const room = roomDetails[0];
+    
+    // Calculate total price based on room pricing
+    let totalPrice = 0;
+    if (room.room_group_room_type_id) {
+      // Get room pricing for weekdays first, then weekends as fallback
+      const [pricing] = await connection.execute(`
+        SELECT price FROM RoomPricing 
+        WHERE room_group_room_type_id = ? AND hotel = ? AND day_of_week = 'weekdays'
+        LIMIT 1
+      `, [room.room_group_room_type_id, room.hotel]);
+      
+      if (pricing.length > 0) {
+        totalPrice = pricing[0].price;
+      } else {
+        // Fallback to weekends pricing
+        const [weekendPricing] = await connection.execute(`
+          SELECT price FROM RoomPricing 
+          WHERE room_group_room_type_id = ? AND hotel = ? AND day_of_week = 'weekends'
+          LIMIT 1
+        `, [room.room_group_room_type_id, room.hotel]);
+        
+        if (weekendPricing.length > 0) {
+          totalPrice = weekendPricing[0].price;
+        }
+      }
+    }
     
     // Generate reservation code
     const reservationCode = generateReservationCode();
@@ -180,12 +256,12 @@ router.post('/', authenticateToken, validateReservation, async (req, res) => {
       INSERT INTO Reservations (
         reservation_code, guest_id, room_id, check_in_date, check_out_date,
         check_in_time, check_out_time, num_adults, num_children, children_ages,
-        special_requests, total_price, currency, status, payment_status, source
+        special_requests, total_price, status, payment_status, source
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       reservationCode, guest_id, room_id, check_in_date, check_out_date,
       check_in_time, check_out_time, num_adults, num_children, children_ages,
-      special_requests, 0, currency, status, payment_status, source
+      special_requests, totalPrice, status, payment_status, source
     ]);
     
     // Get the created reservation
@@ -203,8 +279,9 @@ router.post('/', authenticateToken, validateReservation, async (req, res) => {
       FROM Reservations r
       JOIN Guests g ON r.guest_id = g.guest_id
       JOIN Rooms rm ON r.room_id = rm.room_id
-      LEFT JOIN RoomTypes rt ON rm.room_type_id = rt.room_type_id
-      LEFT JOIN RoomGroups rg ON rm.room_group_id = rg.room_group_id
+      LEFT JOIN RoomGroupRoomType rgr ON rm.room_group_room_type_id = rgr.id
+      LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
+      LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
       WHERE r.reservation_id = ?
     `, [result.insertId]);
     
@@ -252,7 +329,7 @@ router.put('/:id', authenticateToken, validateReservation, async (req, res) => {
       status,
       payment_status,
       source,
-      currency
+
     } = req.body;
 
     const connection = await mysql.createConnection(dbConfig);
@@ -271,18 +348,40 @@ router.put('/:id', authenticateToken, validateReservation, async (req, res) => {
       });
     }
     
+    // Get room details to recalculate pricing
+    const [roomDetails] = await connection.execute(`
+      SELECT 
+        rm.hotel,
+        rm.room_group_room_type_id
+      FROM Rooms rm
+      WHERE rm.room_id = ?
+    `, [room_id]);
+    
+    if (roomDetails.length === 0) {
+      await connection.end();
+      return res.status(400).json({
+        success: false,
+        message: 'Room not found'
+      });
+    }
+    
+    const room = roomDetails[0];
+    
+    // Calculate total price based on room pricing
+    const totalPrice = await calculateRoomPrice(connection, room.room_group_room_type_id, room.hotel);
+    
     // Update reservation
     await connection.execute(`
       UPDATE Reservations SET 
         guest_id = ?, room_id = ?, check_in_date = ?, check_out_date = ?,
         check_in_time = ?, check_out_time = ?, num_adults = ?, num_children = ?,
-        children_ages = ?, special_requests = ?, currency = ?,
+        children_ages = ?, special_requests = ?, total_price = ?,
         status = ?, payment_status = ?, source = ?
         WHERE reservation_id = ?
     `, [
       guest_id, room_id, check_in_date, check_out_date,
       check_in_time, check_out_time, num_adults, num_children,
-      children_ages, special_requests, currency,
+      children_ages, special_requests, totalPrice,
       status, payment_status, source, id
     ]);
     
@@ -301,8 +400,9 @@ router.put('/:id', authenticateToken, validateReservation, async (req, res) => {
       FROM Reservations r
       JOIN Guests g ON r.guest_id = g.guest_id
       JOIN Rooms rm ON r.room_id = rm.room_id
-      LEFT JOIN RoomTypes rt ON rm.room_type_id = rt.room_type_id
-      LEFT JOIN RoomGroups rg ON rm.room_group_id = rg.room_group_id
+      LEFT JOIN RoomGroupRoomType rgr ON rm.room_group_room_type_id = rgr.id
+      LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
+      LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
       WHERE r.reservation_id = ?
     `, [id]);
     
@@ -377,10 +477,12 @@ router.get('/rooms/list', authenticateToken, async (req, res) => {
         r.hotel,
         r.status,
         rt.type_name as room_type,
-        rg.group_name as room_group
+        rg.group_name as room_group,
+        rt.max_occupancy
       FROM Rooms r
-      LEFT JOIN RoomTypes rt ON r.room_type_id = rt.room_type_id
-      LEFT JOIN RoomGroups rg ON r.room_group_id = rg.room_group_id
+      LEFT JOIN RoomGroupRoomType rgr ON r.room_group_room_type_id = rgr.id
+      LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
+      LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
       ORDER BY r.hotel, r.room_number
     `);
     
@@ -392,6 +494,72 @@ router.get('/rooms/list', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching rooms list:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
+// Debug endpoint to check room pricing
+router.get('/debug/pricing/:roomId', authenticateToken, async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const connection = await mysql.createConnection(dbConfig);
+    
+    // Get room details
+    const [roomDetails] = await connection.execute(`
+      SELECT 
+        rm.room_id,
+        rm.hotel,
+        rm.room_group_room_type_id,
+        rt.type_name,
+        rg.group_name
+      FROM Rooms rm
+      LEFT JOIN RoomGroupRoomType rgr ON rm.room_group_room_type_id = rgr.id
+      LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
+      LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
+      WHERE rm.room_id = ?
+    `, [roomId]);
+    
+    if (roomDetails.length === 0) {
+      await connection.end();
+      return res.status(404).json({
+        success: false,
+        message: 'Room not found'
+      });
+    }
+    
+    const room = roomDetails[0];
+    
+    // Get pricing for this room
+    const [pricing] = await connection.execute(`
+      SELECT 
+        rp.pricing_id,
+        rp.price,
+        rp.day_of_week,
+        rp.hotel,
+        rp.room_group_room_type_id
+      FROM RoomPricing rp
+      WHERE rp.room_group_room_type_id = ? AND rp.hotel = ?
+      ORDER BY rp.day_of_week
+    `, [room.room_group_room_type_id, room.hotel]);
+    
+    const calculatedPrice = await calculateRoomPrice(connection, room.room_group_room_type_id, room.hotel);
+    
+    await connection.end();
+    
+    res.json({
+      success: true,
+      data: {
+        room,
+        pricing,
+        calculatedPrice
+      }
+    });
+  } catch (error) {
+    console.error('Error debugging pricing:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
