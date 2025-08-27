@@ -16,17 +16,27 @@ const validateRoomType = [
   body('type_name').trim().notEmpty().withMessage('Type name is required')
     .isLength({ max: 100 }).withMessage('Type name must be less than 100 characters'),
   body('description').optional().trim(),
-  body('max_occupancy').optional().isInt({ min: 1, max: 10 }).withMessage('Max occupancy must be between 1 and 10')
+  body('max_occupancy').optional().isInt({ min: 1, max: 10 }).withMessage('Max occupancy must be between 1 and 10'),
+  body('hotel').notEmpty().withMessage('Hotel is required')
 ];
 
 // GET all room types
 router.get('/', async (req, res) => {
   try {
+    const { hotel } = req.query;
     const connection = await mysql.createConnection(dbConfig);
     
-    const [rows] = await connection.execute(
-      'SELECT * FROM RoomTypes ORDER BY created_at DESC'
-    );
+    let query = 'SELECT * FROM RoomTypes';
+    let params = [];
+    
+    if (hotel) {
+      query += ' WHERE hotel = ?';
+      params.push(hotel);
+    }
+    
+    query += ' ORDER BY created_at DESC';
+    
+    const [rows] = await connection.execute(query, params);
     
     await connection.end();
     
@@ -90,12 +100,12 @@ router.post('/', validateRoomType, async (req, res) => {
       });
     }
 
-    const { type_name, description, max_occupancy = 2 } = req.body;
+    const { type_name, description, max_occupancy = 2, hotel } = req.body;
     const connection = await mysql.createConnection(dbConfig);
     
     const [result] = await connection.execute(
-      'INSERT INTO RoomTypes (type_name, description, max_occupancy) VALUES (?, ?, ?)',
-      [type_name, description, max_occupancy]
+      'INSERT INTO RoomTypes (type_name, description, max_occupancy, hotel) VALUES (?, ?, ?, ?)',
+      [type_name, description, max_occupancy, hotel]
     );
     
     const [newRoomType] = await connection.execute(
@@ -133,7 +143,7 @@ router.put('/:id', validateRoomType, async (req, res) => {
     }
 
     const { id } = req.params;
-    const { type_name, description, max_occupancy = 2 } = req.body;
+    const { type_name, description, max_occupancy = 2, hotel } = req.body;
     const connection = await mysql.createConnection(dbConfig);
     
     // Check if room type exists
@@ -151,8 +161,8 @@ router.put('/:id', validateRoomType, async (req, res) => {
     }
     
     await connection.execute(
-      'UPDATE RoomTypes SET type_name = ?, description = ?, max_occupancy = ? WHERE room_type_id = ?',
-      [type_name, description, max_occupancy, id]
+      'UPDATE RoomTypes SET type_name = ?, description = ?, max_occupancy = ?, hotel = ? WHERE room_type_id = ?',
+      [type_name, description, max_occupancy, hotel, id]
     );
     
     const [updatedRoomType] = await connection.execute(
