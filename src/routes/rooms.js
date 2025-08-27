@@ -16,8 +16,7 @@ const dbConfig = {
 const validateRoom = [
   body('hotel').isIn(['africanVillage', 'bishoftu', 'entoto', 'laketana', 'awashfall']).withMessage('Invalid hotel selection'),
   body('room_number').isLength({ min: 1, max: 20 }).withMessage('Room number must be between 1 and 20 characters'),
-  body('room_type_id').optional().isInt().withMessage('Room Type ID must be a valid integer'),
-  body('room_group_id').optional().isInt().withMessage('Room Group ID must be a valid integer'),
+  body('room_group_room_type_id').optional().isInt().withMessage('Room Group Room Type ID must be a valid integer'),
   body('status').isIn(['available', 'occupied', 'maintenance', 'hold', 'booked']).withMessage('Invalid status')
 ];
 
@@ -34,16 +33,14 @@ router.get('/', authenticateToken, async (req, res) => {
         r.status,
         r.created_at,
         r.updated_at,
-        rt.room_type_id,
-        rt.type_name,
-        rt.description as type_description,
-        rt.max_occupancy,
-        rg.room_group_id,
+        r.room_group_room_type_id,
         rg.group_name,
-        rg.description as group_description
+        rt.type_name,
+        rt.max_occupancy
       FROM Rooms r
-      LEFT JOIN RoomTypes rt ON r.room_type_id = rt.room_type_id
-      LEFT JOIN RoomGroups rg ON r.room_group_id = rg.room_group_id
+      LEFT JOIN RoomGroupRoomType rgr ON r.room_group_room_type_id = rgr.id
+      LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
+      LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
       ORDER BY r.hotel, r.room_number
     `);
     
@@ -77,16 +74,14 @@ router.get('/:id', authenticateToken, async (req, res) => {
         r.status,
         r.created_at,
         r.updated_at,
-        rt.room_type_id,
-        rt.type_name,
-        rt.description as type_description,
-        rt.max_occupancy,
-        rg.room_group_id,
+        r.room_group_room_type_id,
         rg.group_name,
-        rg.description as group_description
+        rt.type_name,
+        rt.max_occupancy
       FROM Rooms r
-      LEFT JOIN RoomTypes rt ON r.room_type_id = rt.room_type_id
-      LEFT JOIN RoomGroups rg ON r.room_group_id = rg.room_group_id
+      LEFT JOIN RoomGroupRoomType rgr ON r.room_group_room_type_id = rgr.id
+      LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
+      LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
       WHERE r.room_id = ?
     `, [id]);
     
@@ -127,16 +122,14 @@ router.get('/hotel/:hotel', authenticateToken, async (req, res) => {
         r.status,
         r.created_at,
         r.updated_at,
-        rt.room_type_id,
-        rt.type_name,
-        rt.description as type_description,
-        rt.max_occupancy,
-        rg.room_group_id,
+        r.room_group_room_type_id,
         rg.group_name,
-        rg.description as group_description
+        rt.type_name,
+        rt.max_occupancy
       FROM Rooms r
-      LEFT JOIN RoomTypes rt ON r.room_type_id = rt.room_type_id
-      LEFT JOIN RoomGroups rg ON r.room_group_id = rg.room_group_id
+      LEFT JOIN RoomGroupRoomType rgr ON r.room_group_room_type_id = rgr.id
+      LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
+      LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
       WHERE r.hotel = ?
       ORDER BY r.room_number
     `, [hotel]);
@@ -170,16 +163,14 @@ router.get('/status/available', authenticateToken, async (req, res) => {
         r.status,
         r.created_at,
         r.updated_at,
-        rt.room_type_id,
-        rt.type_name,
-        rt.description as type_description,
-        rt.max_occupancy,
-        rg.room_group_id,
+        r.room_group_room_type_id,
         rg.group_name,
-        rg.description as group_description
+        rt.type_name,
+        rt.max_occupancy
       FROM Rooms r
-      LEFT JOIN RoomTypes rt ON r.room_type_id = rt.room_type_id
-      LEFT JOIN RoomGroups rg ON r.room_group_id = rg.room_group_id
+      LEFT JOIN RoomGroupRoomType rgr ON r.room_group_room_type_id = rgr.id
+      LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
+      LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
       WHERE r.status = 'available'
       ORDER BY r.hotel, r.room_number
     `);
@@ -212,7 +203,7 @@ router.post('/', authenticateToken, validateRoom, async (req, res) => {
       });
     }
 
-    const { hotel, room_number, room_type_id, room_group_id, status } = req.body;
+    const { hotel, room_number, room_group_room_type_id, status } = req.body;
     const connection = await mysql.createConnection(dbConfig);
     
     // Check if room already exists
@@ -231,11 +222,11 @@ router.post('/', authenticateToken, validateRoom, async (req, res) => {
     
     // Create room
     const [result] = await connection.execute(`
-      INSERT INTO Rooms (hotel, room_number, room_type_id, room_group_id, status)
-      VALUES (?, ?, ?, ?, ?)
-    `, [hotel, room_number, room_type_id || null, room_group_id || null, status]);
+      INSERT INTO Rooms (hotel, room_number, room_group_room_type_id, status)
+      VALUES (?, ?, ?, ?)
+    `, [hotel, room_number, room_group_room_type_id || null, status]);
     
-    // Get the created room with details
+    // Get the created room
     const [newRoom] = await connection.execute(`
       SELECT 
         r.room_id,
@@ -244,16 +235,14 @@ router.post('/', authenticateToken, validateRoom, async (req, res) => {
         r.status,
         r.created_at,
         r.updated_at,
-        rt.room_type_id,
-        rt.type_name,
-        rt.description as type_description,
-        rt.max_occupancy,
-        rg.room_group_id,
+        r.room_group_room_type_id,
         rg.group_name,
-        rg.description as group_description
+        rt.type_name,
+        rt.max_occupancy
       FROM Rooms r
-      LEFT JOIN RoomTypes rt ON r.room_type_id = rt.room_type_id
-      LEFT JOIN RoomGroups rg ON r.room_group_id = rg.room_group_id
+      LEFT JOIN RoomGroupRoomType rgr ON r.room_group_room_type_id = rgr.id
+      LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
+      LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
       WHERE r.room_id = ?
     `, [result.insertId]);
     
@@ -287,7 +276,7 @@ router.put('/:id', authenticateToken, validateRoom, async (req, res) => {
     }
 
     const { id } = req.params;
-    const { hotel, room_number, room_type_id, room_group_id, status } = req.body;
+    const { hotel, room_number, room_group_room_type_id, status } = req.body;
     const connection = await mysql.createConnection(dbConfig);
     
     // Check if room exists
@@ -317,11 +306,11 @@ router.put('/:id', authenticateToken, validateRoom, async (req, res) => {
     // Update room
     await connection.execute(`
       UPDATE Rooms SET
-        hotel = ?, room_number = ?, room_type_id = ?, room_group_id = ?, status = ?
+        hotel = ?, room_number = ?, room_group_room_type_id = ?, status = ?
         WHERE room_id = ?
-    `, [hotel, room_number, room_type_id || null, room_group_id || null, status, id]);
+    `, [hotel, room_number, room_group_room_type_id || null, status, id]);
     
-    // Get the updated room with details
+    // Get the updated room
     const [updatedRoom] = await connection.execute(`
       SELECT 
         r.room_id,
@@ -330,16 +319,14 @@ router.put('/:id', authenticateToken, validateRoom, async (req, res) => {
         r.status,
         r.created_at,
         r.updated_at,
-        rt.room_type_id,
-        rt.type_name,
-        rt.description as type_description,
-        rt.max_occupancy,
-        rg.room_group_id,
+        r.room_group_room_type_id,
         rg.group_name,
-        rg.description as group_description
+        rt.type_name,
+        rt.max_occupancy
       FROM Rooms r
-      LEFT JOIN RoomTypes rt ON r.room_type_id = rt.room_type_id
-      LEFT JOIN RoomGroups rg ON r.room_group_id = rg.room_group_id
+      LEFT JOIN RoomGroupRoomType rgr ON r.room_group_room_type_id = rgr.id
+      LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
+      LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
       WHERE r.room_id = ?
     `, [id]);
     
