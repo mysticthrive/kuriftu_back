@@ -16,12 +16,7 @@ const dbConfig = {
 const validateRoomPricing = [
   body('room_group_room_type_id').isInt().withMessage('Room Group Room Type ID must be a valid integer'),
   body('hotel').isIn(['africanVillage', 'bishoftu', 'entoto', 'laketana', 'awashfall']).withMessage('Hotel must be one of the valid options'),
-  body('occupancy').isIn(['single', 'double', 'triple', 'child']).withMessage('Occupancy must be single, double, triple, or child'),
-  body('day_of_week').optional().isIn(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']).withMessage('Day of week must be a valid day'),
-  body('month').optional().isInt({ min: 1, max: 12 }).withMessage('Month must be between 1 and 12'),
-  body('holiday_flag').optional().isBoolean().withMessage('Holiday flag must be a boolean value'),
-  body('start_date').optional().isISO8601().withMessage('Start date must be a valid date'),
-  body('end_date').optional().isISO8601().withMessage('End date must be a valid date'),
+  body('day_of_week').isIn(['weekdays', 'weekends']).withMessage('Day of week must be weekdays or weekends'),
   body('price').isFloat({ min: 0 }).withMessage('Price must be a positive number')
 ];
 
@@ -37,10 +32,6 @@ router.get('/', authenticateToken, async (req, res) => {
         rp.hotel,
         rp.occupancy,
         rp.day_of_week,
-        rp.month,
-        rp.holiday_flag,
-        rp.start_date,
-        rp.end_date,
         rp.price,
         rp.created_at,
         rg.group_name,
@@ -81,10 +72,6 @@ router.get('/:id', authenticateToken, async (req, res) => {
         rp.hotel,
         rp.occupancy,
         rp.day_of_week,
-        rp.month,
-        rp.holiday_flag,
-        rp.start_date,
-        rp.end_date,
         rp.price,
         rp.created_at,
         rg.group_name,
@@ -132,10 +119,6 @@ router.get('/relationship/:relationshipId', authenticateToken, async (req, res) 
         rp.hotel,
         rp.occupancy,
         rp.day_of_week,
-        rp.month,
-        rp.holiday_flag,
-        rp.start_date,
-        rp.end_date,
         rp.price,
         rp.created_at,
         rg.group_name,
@@ -177,10 +160,6 @@ router.get('/hotel/:hotel', authenticateToken, async (req, res) => {
         rp.hotel,
         rp.occupancy,
         rp.day_of_week,
-        rp.month,
-        rp.holiday_flag,
-        rp.start_date,
-        rp.end_date,
         rp.price,
         rp.created_at,
         rg.group_name,
@@ -222,10 +201,6 @@ router.get('/occupancy/:occupancy', authenticateToken, async (req, res) => {
         rp.hotel,
         rp.occupancy,
         rp.day_of_week,
-        rp.month,
-        rp.holiday_flag,
-        rp.start_date,
-        rp.end_date,
         rp.price,
         rp.created_at,
         rg.group_name,
@@ -257,7 +232,7 @@ router.get('/occupancy/:occupancy', authenticateToken, async (req, res) => {
 // GET pricing with filters
 router.get('/filter', authenticateToken, async (req, res) => {
   try {
-    const { hotel, occupancy, day_of_week, month, holiday_flag, start_date, end_date } = req.query;
+    const { hotel, occupancy } = req.query;
     const connection = await mysql.createConnection(dbConfig);
     
     let query = `
@@ -267,10 +242,6 @@ router.get('/filter', authenticateToken, async (req, res) => {
         rp.hotel,
         rp.occupancy,
         rp.day_of_week,
-        rp.month,
-        rp.holiday_flag,
-        rp.start_date,
-        rp.end_date,
         rp.price,
         rp.created_at,
         rg.group_name,
@@ -292,31 +263,6 @@ router.get('/filter', authenticateToken, async (req, res) => {
     if (occupancy) {
       query += ' AND rp.occupancy = ?';
       params.push(occupancy);
-    }
-    
-    if (day_of_week) {
-      query += ' AND rp.day_of_week = ?';
-      params.push(day_of_week);
-    }
-    
-    if (month) {
-      query += ' AND rp.month = ?';
-      params.push(parseInt(month));
-    }
-    
-    if (holiday_flag !== undefined) {
-      query += ' AND rp.holiday_flag = ?';
-      params.push(holiday_flag === 'true');
-    }
-    
-    if (start_date) {
-      query += ' AND rp.start_date >= ?';
-      params.push(start_date);
-    }
-    
-    if (end_date) {
-      query += ' AND rp.end_date <= ?';
-      params.push(end_date);
     }
     
     query += ' ORDER BY rg.group_name, rt.type_name, rp.created_at DESC';
@@ -354,16 +300,29 @@ router.post('/', authenticateToken, validateRoomPricing, async (req, res) => {
     const {
       room_group_room_type_id,
       hotel,
-      occupancy,
       day_of_week,
-      month,
-      holiday_flag,
-      start_date,
-      end_date,
       price
     } = req.body;
 
     const connection = await mysql.createConnection(dbConfig);
+    
+    // Get the max_occupancy from the RoomType
+    const [roomTypeRows] = await connection.execute(`
+      SELECT rt.max_occupancy
+      FROM RoomTypes rt
+      JOIN RoomGroupRoomType rgr ON rt.room_type_id = rgr.room_type_id
+      WHERE rgr.id = ?
+    `, [room_group_room_type_id]);
+    
+    if (roomTypeRows.length === 0) {
+      await connection.end();
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid room group room type relationship'
+      });
+    }
+    
+    const occupancy = roomTypeRows[0].max_occupancy;
     
     const [result] = await connection.execute(`
       INSERT INTO RoomPricing (
@@ -371,21 +330,13 @@ router.post('/', authenticateToken, validateRoomPricing, async (req, res) => {
         hotel,
         occupancy,
         day_of_week,
-        month,
-        holiday_flag,
-        start_date,
-        end_date,
         price
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?)
     `, [
       room_group_room_type_id,
       hotel,
       occupancy,
-      day_of_week || null,
-      month || null,
-      holiday_flag || false,
-      start_date || null,
-      end_date || null,
+      day_of_week,
       price
     ]);
     
@@ -399,11 +350,6 @@ router.post('/', authenticateToken, validateRoomPricing, async (req, res) => {
         room_group_room_type_id,
         hotel,
         occupancy,
-        day_of_week,
-        month,
-        holiday_flag,
-        start_date,
-        end_date,
         price
       }
     });
@@ -433,16 +379,29 @@ router.put('/:id', authenticateToken, validateRoomPricing, async (req, res) => {
     const {
       room_group_room_type_id,
       hotel,
-      occupancy,
       day_of_week,
-      month,
-      holiday_flag,
-      start_date,
-      end_date,
       price
     } = req.body;
 
     const connection = await mysql.createConnection(dbConfig);
+    
+    // Get the max_occupancy from the RoomType
+    const [roomTypeRows] = await connection.execute(`
+      SELECT rt.max_occupancy
+      FROM RoomTypes rt
+      JOIN RoomGroupRoomType rgr ON rt.room_type_id = rgr.room_type_id
+      WHERE rgr.id = ?
+    `, [room_group_room_type_id]);
+    
+    if (roomTypeRows.length === 0) {
+      await connection.end();
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid room group room type relationship'
+      });
+    }
+    
+    const occupancy = roomTypeRows[0].max_occupancy;
     
     const [result] = await connection.execute(`
       UPDATE RoomPricing SET
@@ -450,21 +409,13 @@ router.put('/:id', authenticateToken, validateRoomPricing, async (req, res) => {
         hotel = ?,
         occupancy = ?,
         day_of_week = ?,
-        month = ?,
-        holiday_flag = ?,
-        start_date = ?,
-        end_date = ?,
         price = ?
       WHERE pricing_id = ?
     `, [
       room_group_room_type_id,
       hotel,
       occupancy,
-      day_of_week || null,
-      month || null,
-      holiday_flag || false,
-      start_date || null,
-      end_date || null,
+      day_of_week,
       price,
       id
     ]);
@@ -486,11 +437,6 @@ router.put('/:id', authenticateToken, validateRoomPricing, async (req, res) => {
         room_group_room_type_id,
         hotel,
         occupancy,
-        day_of_week,
-        month,
-        holiday_flag,
-        start_date,
-        end_date,
         price
       }
     });
