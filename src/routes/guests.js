@@ -27,7 +27,8 @@ const validateGuest = [
   body('city').optional().isLength({ max: 100 }).withMessage('City must be less than 100 characters'),
   body('zip_code').optional().isLength({ max: 20 }).withMessage('Zip code must be less than 20 characters'),
   body('address').optional().isLength({ max: 65535 }).withMessage('Address is too long'),
-  body('date_of_birth').optional().isISO8601().withMessage('Date of birth must be a valid date')
+  body('date_of_birth').optional().isISO8601().withMessage('Date of birth must be a valid date'),
+  body('notes').optional().isLength({ max: 65535 }).withMessage('Notes are too long')
 ];
 
 // GET all guests
@@ -111,15 +112,16 @@ router.post('/', authenticateToken, validateGuest, async (req, res) => {
       city,
       zip_code,
       address,
-      date_of_birth
+      date_of_birth,
+      notes
     } = req.body;
 
     const connection = await mysql.createConnection(dbConfig);
     
     const [result] = await connection.execute(
-      `INSERT INTO Guests (first_name, last_name, email, gender, phone, country, city, zip_code, address, date_of_birth) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [first_name, last_name, email, gender, phone, country, city, zip_code, address, date_of_birth]
+      `INSERT INTO Guests (first_name, last_name, email, gender, phone, country, city, zip_code, address, date_of_birth, notes) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [first_name, last_name, email, gender, phone, country, city, zip_code, address, date_of_birth, notes]
     );
     
     const [newGuest] = await connection.execute(
@@ -176,7 +178,8 @@ router.put('/:id', authenticateToken, validateGuest, async (req, res) => {
       city,
       zip_code,
       address,
-      date_of_birth
+      date_of_birth,
+      notes
     } = req.body;
 
     const connection = await mysql.createConnection(dbConfig);
@@ -212,9 +215,9 @@ router.put('/:id', authenticateToken, validateGuest, async (req, res) => {
     await connection.execute(
       `UPDATE Guests SET 
        first_name = ?, last_name = ?, email = ?, gender = ?, phone = ?, 
-       country = ?, city = ?, zip_code = ?, address = ?, date_of_birth = ? 
+       country = ?, city = ?, zip_code = ?, address = ?, date_of_birth = ?, notes = ? 
        WHERE guest_id = ?`,
-      [first_name, last_name, email, gender, phone, country, city, zip_code, address, date_of_birth, id]
+      [first_name, last_name, email, gender, phone, country, city, zip_code, address, date_of_birth, notes, id]
     );
     
     const [updatedGuest] = await connection.execute(
