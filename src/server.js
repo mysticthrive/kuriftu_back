@@ -42,7 +42,7 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/room-groups', require('./routes/roomGroups'));
 app.use('/api/room-types', require('./routes/roomTypes'));
 app.use('/api/room-group-room-types', require('./routes/roomGroupRoomTypes'));
-app.use('/api/room-type-images', require('./routes/roomTypeImages'));
+app.use('/api/room-images', require('./routes/roomTypeImages'));
 app.use('/api/room-pricing', require('./routes/roomPricing'));
 app.use('/api/rooms', require('./routes/rooms'));
 app.use('/api/guests', require('./routes/guests'));
