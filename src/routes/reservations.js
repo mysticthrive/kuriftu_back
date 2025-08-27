@@ -35,6 +35,37 @@ const generateReservationCode = () => {
   return `RES-${timestamp}-${random}`.toUpperCase();
 };
 
+// Calculate children pricing based on ages
+const calculateChildrenPricing = (childrenAges, nights) => {
+  if (!childrenAges || !nights) return { bedPrice: 0, breakfastPrice: 0 };
+  
+  const ages = childrenAges.split(',').map(age => parseInt(age.trim())).filter(age => !isNaN(age));
+  let totalBedPrice = 0;
+  let totalBreakfastPrice = 0;
+  
+  ages.forEach(age => {
+    // Bed pricing
+    if (age >= 3 && age <= 11) {
+      totalBedPrice += 20; // USD 20 for ages 3-11
+    } else if (age >= 12 && age <= 17) {
+      totalBedPrice += 40; // USD 40 for ages 12-17
+    }
+    
+    // Breakfast pricing
+    if (age >= 6 && age <= 12) {
+      totalBreakfastPrice += 15; // USD 15 for ages 6-12
+    } else if (age > 12) {
+      totalBreakfastPrice += 18; // USD 18 for ages above 12
+    }
+  });
+  
+  // Multiply by number of nights
+  return {
+    bedPrice: totalBedPrice * nights,
+    breakfastPrice: totalBreakfastPrice * nights
+  };
+};
+
 // Calculate room price based on room_group_room_type_id and hotel
 const calculateRoomPrice = async (connection, roomGroupRoomTypeId, hotel, checkInDate = null, checkOutDate = null) => {
   if (!roomGroupRoomTypeId) return 0;
@@ -233,11 +264,13 @@ router.post('/', authenticateToken, validateReservation, async (req, res) => {
     
     // Calculate total price based on room pricing and stay duration
     let totalPrice = 0;
+    let nights = 0;
+    
     if (room.room_group_room_type_id) {
       // Calculate number of nights
       const checkInDate = new Date(check_in_date);
       const checkOutDate = new Date(check_out_date);
-      const nights = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
+      nights = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
       
       if (nights > 0) {
         // Get room pricing for weekdays first, then weekends as fallback
@@ -263,6 +296,10 @@ router.post('/', authenticateToken, validateReservation, async (req, res) => {
         }
       }
     }
+    
+    // Calculate children pricing
+    const childrenPricing = calculateChildrenPricing(children_ages, nights);
+    totalPrice += childrenPricing.bedPrice + childrenPricing.breakfastPrice;
     
     // Generate reservation code
     const reservationCode = generateReservationCode();
@@ -384,7 +421,16 @@ router.put('/:id', authenticateToken, validateReservation, async (req, res) => {
     const room = roomDetails[0];
     
     // Calculate total price based on room pricing and stay duration
-    const totalPrice = await calculateRoomPrice(connection, room.room_group_room_type_id, room.hotel, check_in_date, check_out_date);
+    let totalPrice = await calculateRoomPrice(connection, room.room_group_room_type_id, room.hotel, check_in_date, check_out_date);
+    
+    // Calculate number of nights for children pricing
+    const checkInDate = new Date(check_in_date);
+    const checkOutDate = new Date(check_out_date);
+    const nights = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
+    
+    // Calculate children pricing
+    const childrenPricing = calculateChildrenPricing(children_ages, nights);
+    totalPrice += childrenPricing.bedPrice + childrenPricing.breakfastPrice;
     
     // Update reservation
     await connection.execute(`
