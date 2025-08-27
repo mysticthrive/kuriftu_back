@@ -66,6 +66,43 @@ const calculateChildrenPricing = (childrenAges, nights) => {
   };
 };
 
+// Calculate early check-in and late check-out charges
+const calculateCheckInOutCharges = (checkInTime, checkOutTime, baseRoomPrice) => {
+  let earlyCheckInCharge = 0;
+  let lateCheckOutCharge = 0;
+  
+  // Parse check-in time
+  if (checkInTime) {
+    const [hours, minutes] = checkInTime.split(':').map(Number);
+    const checkInHour = hours + minutes / 60;
+    
+    // Early check-in: 6:00 AM to 12:00 PM (6:00 to 12:00)
+    if (checkInHour >= 6 && checkInHour < 12) {
+      earlyCheckInCharge = baseRoomPrice * 0.5; // 50% of room charge
+    }
+  }
+  
+  // Parse check-out time
+  if (checkOutTime) {
+    const [hours, minutes] = checkOutTime.split(':').map(Number);
+    const checkOutHour = hours + minutes / 60;
+    
+    // Late check-out: 11:00 AM to 6:00 PM (11:00 to 18:00)
+    if (checkOutHour >= 11 && checkOutHour < 18) {
+      lateCheckOutCharge = baseRoomPrice * 0.5; // 50% of room charge
+    }
+    // Late check-out: After 6:00 PM (18:00+)
+    else if (checkOutHour >= 18) {
+      lateCheckOutCharge = baseRoomPrice; // 100% of room charge
+    }
+  }
+  
+  return {
+    earlyCheckInCharge,
+    lateCheckOutCharge
+  };
+};
+
 // Calculate room price based on room_group_room_type_id and hotel
 const calculateRoomPrice = async (connection, roomGroupRoomTypeId, hotel, checkInDate = null, checkOutDate = null) => {
   if (!roomGroupRoomTypeId) return 0;
@@ -301,6 +338,11 @@ router.post('/', authenticateToken, validateReservation, async (req, res) => {
     const childrenPricing = calculateChildrenPricing(children_ages, nights);
     totalPrice += childrenPricing.bedPrice + childrenPricing.breakfastPrice;
     
+    // Calculate early check-in and late check-out charges
+    const baseRoomPrice = totalPrice / nights; // Get base room price per night
+    const checkInOutCharges = calculateCheckInOutCharges(check_in_time, check_out_time, baseRoomPrice);
+    totalPrice += checkInOutCharges.earlyCheckInCharge + checkInOutCharges.lateCheckOutCharge;
+    
     // Generate reservation code
     const reservationCode = generateReservationCode();
     
@@ -431,6 +473,11 @@ router.put('/:id', authenticateToken, validateReservation, async (req, res) => {
     // Calculate children pricing
     const childrenPricing = calculateChildrenPricing(children_ages, nights);
     totalPrice += childrenPricing.bedPrice + childrenPricing.breakfastPrice;
+    
+    // Calculate early check-in and late check-out charges
+    const baseRoomPrice = totalPrice / nights; // Get base room price per night
+    const checkInOutCharges = calculateCheckInOutCharges(check_in_time, check_out_time, baseRoomPrice);
+    totalPrice += checkInOutCharges.earlyCheckInCharge + checkInOutCharges.lateCheckOutCharge;
     
     // Update reservation
     await connection.execute(`
