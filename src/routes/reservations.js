@@ -191,9 +191,10 @@ const calculateRoomPriceByDays = async (connection, roomGroupRoomTypeId, hotel, 
 // GET all reservations with guest and room details
 router.get('/', authenticateToken, async (req, res) => {
   try {
+    const { hotel } = req.query;
     const connection = await mysql.createConnection(dbConfig);
     
-    const [rows] = await connection.execute(`
+    let query = `
       SELECT 
         r.reservation_id,
         r.reservation_code,
@@ -206,7 +207,6 @@ router.get('/', authenticateToken, async (req, res) => {
         r.children_ages,
         r.special_requests,
         r.total_price,
-
         r.status,
         r.payment_status,
         r.source,
@@ -228,8 +228,18 @@ router.get('/', authenticateToken, async (req, res) => {
       LEFT JOIN RoomGroupRoomType rgr ON rm.room_group_room_type_id = rgr.id
       LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
       LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
-      ORDER BY r.created_at DESC
-    `);
+    `;
+    
+    let params = [];
+    
+    if (hotel) {
+      query += ' WHERE rm.hotel = ?';
+      params.push(hotel);
+    }
+    
+    query += ' ORDER BY r.created_at DESC';
+    
+    const [rows] = await connection.execute(query, params);
     
     await connection.end();
     

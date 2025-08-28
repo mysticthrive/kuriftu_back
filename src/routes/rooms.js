@@ -251,6 +251,63 @@ router.get('/status/available', authenticateToken, async (req, res) => {
   }
 });
 
+// GET rooms by room group and room type
+router.get('/by-group-type/:roomGroupId/:roomTypeId', authenticateToken, async (req, res) => {
+  try {
+    const { roomGroupId, roomTypeId } = req.params;
+    const connection = await mysql.createConnection(dbConfig);
+    
+    const [rows] = await connection.execute(`
+      SELECT 
+        r.room_id,
+        r.hotel,
+        r.room_number,
+        r.status,
+        r.created_at,
+        r.updated_at,
+        r.room_group_room_type_id,
+        rg.group_name,
+        rt.type_name,
+        rt.max_occupancy,
+        weekday_price.price as weekday_price,
+        weekend_price.price as weekend_price
+      FROM Rooms r
+      JOIN RoomGroupRoomType rgr ON r.room_group_room_type_id = rgr.id
+      JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
+      JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
+      LEFT JOIN RoomPricing weekday_price ON rgr.id = weekday_price.room_group_room_type_id 
+        AND r.hotel = weekday_price.hotel 
+        AND weekday_price.day_of_week = 'weekdays'
+      LEFT JOIN RoomPricing weekend_price ON rgr.id = weekend_price.room_group_room_type_id 
+        AND r.hotel = weekend_price.hotel 
+        AND weekend_price.day_of_week = 'weekends'
+      WHERE rgr.room_group_id = ? AND rgr.room_type_id = ?
+      ORDER BY r.hotel, r.room_number
+    `, [roomGroupId, roomTypeId]);
+    
+    await connection.end();
+    
+    // Convert price values to numbers
+    const transformedRows = rows.map(row => ({
+      ...row,
+      weekday_price: row.weekday_price ? Number(row.weekday_price) : null,
+      weekend_price: row.weekend_price ? Number(row.weekend_price) : null
+    }));
+    
+    res.json({
+      success: true,
+      data: transformedRows
+    });
+  } catch (error) {
+    console.error('Error fetching rooms by group and type:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
 // POST create new room
 router.post('/', authenticateToken, validateRoom, async (req, res) => {
   try {
