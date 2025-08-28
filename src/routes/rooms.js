@@ -36,19 +36,34 @@ router.get('/', authenticateToken, async (req, res) => {
         r.room_group_room_type_id,
         rg.group_name,
         rt.type_name,
-        rt.max_occupancy
+        rt.max_occupancy,
+        weekday_price.price as weekday_price,
+        weekend_price.price as weekend_price
       FROM Rooms r
       LEFT JOIN RoomGroupRoomType rgr ON r.room_group_room_type_id = rgr.id
       LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
       LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
+      LEFT JOIN RoomPricing weekday_price ON rgr.id = weekday_price.room_group_room_type_id 
+        AND r.hotel = weekday_price.hotel 
+        AND weekday_price.day_of_week = 'weekdays'
+      LEFT JOIN RoomPricing weekend_price ON rgr.id = weekend_price.room_group_room_type_id 
+        AND r.hotel = weekend_price.hotel 
+        AND weekend_price.day_of_week = 'weekends'
       ORDER BY r.hotel, r.room_number
     `);
     
     await connection.end();
     
+    // Convert price values to numbers
+    const transformedRows = rows.map(row => ({
+      ...row,
+      weekday_price: row.weekday_price ? Number(row.weekday_price) : null,
+      weekend_price: row.weekend_price ? Number(row.weekend_price) : null
+    }));
+    
     res.json({
       success: true,
-      data: rows
+      data: transformedRows
     });
   } catch (error) {
     console.error('Error fetching rooms:', error);
@@ -77,11 +92,19 @@ router.get('/:id', authenticateToken, async (req, res) => {
         r.room_group_room_type_id,
         rg.group_name,
         rt.type_name,
-        rt.max_occupancy
+        rt.max_occupancy,
+        weekday_price.price as weekday_price,
+        weekend_price.price as weekend_price
       FROM Rooms r
       LEFT JOIN RoomGroupRoomType rgr ON r.room_group_room_type_id = rgr.id
       LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
       LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
+      LEFT JOIN RoomPricing weekday_price ON rgr.id = weekday_price.room_group_room_type_id 
+        AND r.hotel = weekday_price.hotel 
+        AND weekday_price.day_of_week = 'weekdays'
+      LEFT JOIN RoomPricing weekend_price ON rgr.id = weekend_price.room_group_room_type_id 
+        AND r.hotel = weekend_price.hotel 
+        AND weekend_price.day_of_week = 'weekends'
       WHERE r.room_id = ?
     `, [id]);
     
@@ -94,9 +117,16 @@ router.get('/:id', authenticateToken, async (req, res) => {
       });
     }
     
+    // Convert price values to numbers
+    const transformedRow = {
+      ...rows[0],
+      weekday_price: rows[0].weekday_price ? Number(rows[0].weekday_price) : null,
+      weekend_price: rows[0].weekend_price ? Number(rows[0].weekend_price) : null
+    };
+    
     res.json({
       success: true,
-      data: rows[0]
+      data: transformedRow
     });
   } catch (error) {
     console.error('Error fetching room:', error);
@@ -125,20 +155,35 @@ router.get('/hotel/:hotel', authenticateToken, async (req, res) => {
         r.room_group_room_type_id,
         rg.group_name,
         rt.type_name,
-        rt.max_occupancy
+        rt.max_occupancy,
+        weekday_price.price as weekday_price,
+        weekend_price.price as weekend_price
       FROM Rooms r
       LEFT JOIN RoomGroupRoomType rgr ON r.room_group_room_type_id = rgr.id
       LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
       LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
+      LEFT JOIN RoomPricing weekday_price ON rgr.id = weekday_price.room_group_room_type_id 
+        AND r.hotel = weekday_price.hotel 
+        AND weekday_price.day_of_week = 'weekdays'
+      LEFT JOIN RoomPricing weekend_price ON rgr.id = weekend_price.room_group_room_type_id 
+        AND r.hotel = weekend_price.hotel 
+        AND weekend_price.day_of_week = 'weekends'
       WHERE r.hotel = ?
       ORDER BY r.room_number
     `, [hotel]);
     
     await connection.end();
     
+    // Convert price values to numbers
+    const transformedRows = rows.map(row => ({
+      ...row,
+      weekday_price: row.weekday_price ? Number(row.weekday_price) : null,
+      weekend_price: row.weekend_price ? Number(row.weekend_price) : null
+    }));
+    
     res.json({
       success: true,
-      data: rows
+      data: transformedRows
     });
   } catch (error) {
     console.error('Error fetching rooms by hotel:', error);
@@ -166,20 +211,35 @@ router.get('/status/available', authenticateToken, async (req, res) => {
         r.room_group_room_type_id,
         rg.group_name,
         rt.type_name,
-        rt.max_occupancy
+        rt.max_occupancy,
+        weekday_price.price as weekday_price,
+        weekend_price.price as weekend_price
       FROM Rooms r
       LEFT JOIN RoomGroupRoomType rgr ON r.room_group_room_type_id = rgr.id
       LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
       LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
+      LEFT JOIN RoomPricing weekday_price ON rgr.id = weekday_price.room_group_room_type_id 
+        AND r.hotel = weekday_price.hotel 
+        AND weekday_price.day_of_week = 'weekdays'
+      LEFT JOIN RoomPricing weekend_price ON rgr.id = weekend_price.room_group_room_type_id 
+        AND r.hotel = weekend_price.hotel 
+        AND weekend_price.day_of_week = 'weekends'
       WHERE r.status = 'available'
       ORDER BY r.hotel, r.room_number
     `);
     
     await connection.end();
     
+    // Convert price values to numbers
+    const transformedRows = rows.map(row => ({
+      ...row,
+      weekday_price: row.weekday_price ? Number(row.weekday_price) : null,
+      weekend_price: row.weekend_price ? Number(row.weekend_price) : null
+    }));
+    
     res.json({
       success: true,
-      data: rows
+      data: transformedRows
     });
   } catch (error) {
     console.error('Error fetching available rooms:', error);

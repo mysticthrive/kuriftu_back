@@ -37,7 +37,7 @@ const generateReservationCode = () => {
 
 // Calculate children pricing based on ages
 const calculateChildrenPricing = (childrenAges, nights) => {
-  if (!childrenAges || !nights) return { bedPrice: 0, breakfastPrice: 0 };
+  if (!childrenAges || !nights || nights <= 0) return { bedPrice: 0, breakfastPrice: 0 };
   
   const ages = childrenAges.split(',').map(age => parseInt(age.trim())).filter(age => !isNaN(age));
   let totalBedPrice = 0;
@@ -61,8 +61,8 @@ const calculateChildrenPricing = (childrenAges, nights) => {
   
   // Multiply by number of nights
   return {
-    bedPrice: totalBedPrice * nights,
-    breakfastPrice: totalBreakfastPrice * nights
+    bedPrice: Number(totalBedPrice * nights) || 0,
+    breakfastPrice: Number(totalBreakfastPrice * nights) || 0
   };
 };
 
@@ -71,35 +71,38 @@ const calculateCheckInOutCharges = (checkInTime, checkOutTime, baseRoomPrice) =>
   let earlyCheckInCharge = 0;
   let lateCheckOutCharge = 0;
   
+  // Ensure baseRoomPrice is a valid number
+  const validBasePrice = Number(baseRoomPrice) || 0;
+  
   // Parse check-in time
-  if (checkInTime) {
+  if (checkInTime && validBasePrice > 0) {
     const [hours, minutes] = checkInTime.split(':').map(Number);
     const checkInHour = hours + minutes / 60;
     
     // Early check-in: 6:00 AM to 12:00 PM (6:00 to 12:00)
     if (checkInHour >= 6 && checkInHour < 12) {
-      earlyCheckInCharge = baseRoomPrice * 0.5; // 50% of room charge
+      earlyCheckInCharge = validBasePrice * 0.5; // 50% of room charge
     }
   }
   
   // Parse check-out time
-  if (checkOutTime) {
+  if (checkOutTime && validBasePrice > 0) {
     const [hours, minutes] = checkOutTime.split(':').map(Number);
     const checkOutHour = hours + minutes / 60;
     
     // Late check-out: 11:00 AM to 6:00 PM (11:00 to 18:00)
     if (checkOutHour >= 11 && checkOutHour < 18) {
-      lateCheckOutCharge = baseRoomPrice * 0.5; // 50% of room charge
+      lateCheckOutCharge = validBasePrice * 0.5; // 50% of room charge
     }
     // Late check-out: After 6:00 PM (18:00+)
     else if (checkOutHour >= 18) {
-      lateCheckOutCharge = baseRoomPrice; // 100% of room charge
+      lateCheckOutCharge = validBasePrice; // 100% of room charge
     }
   }
   
   return {
-    earlyCheckInCharge,
-    lateCheckOutCharge
+    earlyCheckInCharge: Number(earlyCheckInCharge) || 0,
+    lateCheckOutCharge: Number(lateCheckOutCharge) || 0
   };
 };
 
@@ -139,6 +142,50 @@ const calculateRoomPrice = async (connection, roomGroupRoomTypeId, hotel, checkI
   }
   
   return basePrice;
+};
+
+// Calculate room price based on actual days of the week (weekdays vs weekends)
+const calculateRoomPriceByDays = async (connection, roomGroupRoomTypeId, hotel, checkInDate, checkOutDate) => {
+  if (!roomGroupRoomTypeId || !checkInDate || !checkOutDate) return 0;
+  
+  // Get both weekday and weekend pricing
+  const [pricing] = await connection.execute(`
+    SELECT day_of_week, price FROM RoomPricing 
+    WHERE room_group_room_type_id = ? AND hotel = ?
+    ORDER BY day_of_week
+  `, [roomGroupRoomTypeId, hotel]);
+  
+  if (pricing.length === 0) return 0;
+  
+  // Create pricing map
+  const pricingMap = {};
+  pricing.forEach(p => {
+    pricingMap[p.day_of_week] = Number(p.price) || 0;
+  });
+  
+  // Calculate total price based on actual days
+  const checkIn = new Date(checkInDate);
+  const checkOut = new Date(checkOutDate);
+  let totalPrice = 0;
+  let currentDate = new Date(checkIn);
+  
+  while (currentDate < checkOut) {
+    const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    
+    // Determine if it's a weekday (Monday-Friday) or weekend (Saturday-Sunday)
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday
+    const dayType = isWeekend ? 'weekends' : 'weekdays';
+    
+    // Add price for this day
+    if (pricingMap[dayType]) {
+      totalPrice += pricingMap[dayType];
+    }
+    
+    // Move to next day
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  return Number(totalPrice) || 0;
 };
 
 // GET all reservations with guest and room details
@@ -300,51 +347,50 @@ router.post('/', authenticateToken, validateReservation, async (req, res) => {
     const room = roomDetails[0];
     
     // Calculate total price based on room pricing and stay duration
-    let totalPrice = 0;
+    let roomPrice = 0;
     let nights = 0;
     
     if (room.room_group_room_type_id) {
       // Calculate number of nights
       const checkInDate = new Date(check_in_date);
       const checkOutDate = new Date(check_out_date);
-      nights = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
+      nights = Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24));
       
       if (nights > 0) {
-        // Get room pricing for weekdays first, then weekends as fallback
-        const [pricing] = await connection.execute(`
-          SELECT price FROM RoomPricing 
-          WHERE room_group_room_type_id = ? AND hotel = ? AND day_of_week = 'weekdays'
-          LIMIT 1
-        `, [room.room_group_room_type_id, room.hotel]);
-        
-        if (pricing.length > 0) {
-          totalPrice = pricing[0].price * nights;
-        } else {
-          // Fallback to weekends pricing
-          const [weekendPricing] = await connection.execute(`
-            SELECT price FROM RoomPricing 
-            WHERE room_group_room_type_id = ? AND hotel = ? AND day_of_week = 'weekends'
-            LIMIT 1
-          `, [room.room_group_room_type_id, room.hotel]);
-          
-          if (weekendPricing.length > 0) {
-            totalPrice = weekendPricing[0].price * nights;
-          }
-        }
+        // Calculate room price based on actual days of the week (weekdays vs weekends)
+        roomPrice = await calculateRoomPriceByDays(connection, room.room_group_room_type_id, room.hotel, check_in_date, check_out_date);
+        roomPrice = Number(roomPrice); // Ensure it's a number
       }
     }
     
     // Calculate children pricing
     const childrenPricing = calculateChildrenPricing(children_ages, nights);
-    totalPrice += childrenPricing.bedPrice + childrenPricing.breakfastPrice;
+    const childrenTotal = Number(childrenPricing.bedPrice) + Number(childrenPricing.breakfastPrice);
     
-    // Calculate early check-in and late check-out charges
-    const baseRoomPrice = totalPrice / nights; // Get base room price per night
-    const checkInOutCharges = calculateCheckInOutCharges(check_in_time, check_out_time, baseRoomPrice);
-    totalPrice += checkInOutCharges.earlyCheckInCharge + checkInOutCharges.lateCheckOutCharge;
+    // Calculate early check-in and late check-out charges based on room price only
+    const baseRoomPricePerNight = nights > 0 ? Number(roomPrice) / Number(nights) : 0;
+    const checkInOutCharges = calculateCheckInOutCharges(check_in_time, check_out_time, baseRoomPricePerNight);
+    const checkInOutTotal = Number(checkInOutCharges.earlyCheckInCharge) + Number(checkInOutCharges.lateCheckOutCharge);
+    
+    // Calculate total price: Room Price + Children Pricing + Check-in/out Charges
+    const totalPrice = (Number(roomPrice) || 0) + (Number(childrenTotal) || 0) + (Number(checkInOutTotal) || 0);
+    
+    // Debug logging
+    console.log('Price calculation debug:', {
+      roomPrice: roomPrice,
+      childrenTotal: childrenTotal,
+      checkInOutTotal: checkInOutTotal,
+      totalPrice: totalPrice,
+      nights: nights,
+      room_group_room_type_id: room.room_group_room_type_id,
+      hotel: room.hotel
+    });
     
     // Generate reservation code
     const reservationCode = generateReservationCode();
+    
+    // Ensure totalPrice is a proper number
+    const finalTotalPrice = isNaN(totalPrice) ? '0.00' : Number(totalPrice).toFixed(2);
     
     // Create reservation
     const [result] = await connection.execute(`
@@ -356,7 +402,7 @@ router.post('/', authenticateToken, validateReservation, async (req, res) => {
     `, [
       reservationCode, guest_id, room_id, check_in_date, check_out_date,
       check_in_time, check_out_time, num_adults, num_children, children_ages,
-      special_requests, totalPrice, status, payment_status, source
+      special_requests, finalTotalPrice, status, payment_status, source
     ]);
     
     // Get the created reservation
@@ -462,22 +508,40 @@ router.put('/:id', authenticateToken, validateReservation, async (req, res) => {
     
     const room = roomDetails[0];
     
-    // Calculate total price based on room pricing and stay duration
-    let totalPrice = await calculateRoomPrice(connection, room.room_group_room_type_id, room.hotel, check_in_date, check_out_date);
+    // Calculate room price based on room pricing and stay duration
+    let roomPrice = await calculateRoomPriceByDays(connection, room.room_group_room_type_id, room.hotel, check_in_date, check_out_date);
+    roomPrice = Number(roomPrice); // Ensure it's a number
     
     // Calculate number of nights for children pricing
     const checkInDate = new Date(check_in_date);
     const checkOutDate = new Date(check_out_date);
-    const nights = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
+    const nights = Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24));
     
     // Calculate children pricing
     const childrenPricing = calculateChildrenPricing(children_ages, nights);
-    totalPrice += childrenPricing.bedPrice + childrenPricing.breakfastPrice;
+    const childrenTotal = Number(childrenPricing.bedPrice) + Number(childrenPricing.breakfastPrice);
     
-    // Calculate early check-in and late check-out charges
-    const baseRoomPrice = totalPrice / nights; // Get base room price per night
-    const checkInOutCharges = calculateCheckInOutCharges(check_in_time, check_out_time, baseRoomPrice);
-    totalPrice += checkInOutCharges.earlyCheckInCharge + checkInOutCharges.lateCheckOutCharge;
+    // Calculate early check-in and late check-out charges based on room price only
+    const baseRoomPricePerNight = nights > 0 ? Number(roomPrice) / Number(nights) : 0;
+    const checkInOutCharges = calculateCheckInOutCharges(check_in_time, check_out_time, baseRoomPricePerNight);
+    const checkInOutTotal = Number(checkInOutCharges.earlyCheckInCharge) + Number(checkInOutCharges.lateCheckOutCharge);
+    
+    // Calculate total price: Room Price + Children Pricing + Check-in/out Charges
+    const totalPrice = (Number(roomPrice) || 0) + (Number(childrenTotal) || 0) + (Number(checkInOutTotal) || 0);
+    
+    // Debug logging
+    console.log('Price calculation debug (PUT):', {
+      roomPrice: roomPrice,
+      childrenTotal: childrenTotal,
+      checkInOutTotal: checkInOutTotal,
+      totalPrice: totalPrice,
+      nights: nights,
+      room_group_room_type_id: room.room_group_room_type_id,
+      hotel: room.hotel
+    });
+    
+    // Ensure totalPrice is a proper number
+    const finalTotalPrice = isNaN(totalPrice) ? '0.00' : Number(totalPrice).toFixed(2);
     
     // Update reservation
     await connection.execute(`
@@ -490,7 +554,7 @@ router.put('/:id', authenticateToken, validateReservation, async (req, res) => {
     `, [
       guest_id, room_id, check_in_date, check_out_date,
       check_in_time, check_out_time, num_adults, num_children,
-      children_ages, special_requests, totalPrice,
+      children_ages, special_requests, finalTotalPrice,
       status, payment_status, source, id
     ]);
     
@@ -587,19 +651,34 @@ router.get('/rooms/list', authenticateToken, async (req, res) => {
         r.status,
         rt.type_name as room_type,
         rg.group_name as room_group,
-        rt.max_occupancy
+        rt.max_occupancy,
+        weekday_price.price as weekday_price,
+        weekend_price.price as weekend_price
       FROM Rooms r
       LEFT JOIN RoomGroupRoomType rgr ON r.room_group_room_type_id = rgr.id
       LEFT JOIN RoomTypes rt ON rgr.room_type_id = rt.room_type_id
       LEFT JOIN RoomGroups rg ON rgr.room_group_id = rg.room_group_id
+      LEFT JOIN RoomPricing weekday_price ON rgr.id = weekday_price.room_group_room_type_id 
+        AND r.hotel = weekday_price.hotel 
+        AND weekday_price.day_of_week = 'weekdays'
+      LEFT JOIN RoomPricing weekend_price ON rgr.id = weekend_price.room_group_room_type_id 
+        AND r.hotel = weekend_price.hotel 
+        AND weekend_price.day_of_week = 'weekends'
       ORDER BY r.hotel, r.room_number
     `);
     
     await connection.end();
     
+    // Convert price values to numbers
+    const transformedRows = rows.map(row => ({
+      ...row,
+      weekday_price: row.weekday_price ? Number(row.weekday_price) : null,
+      weekend_price: row.weekend_price ? Number(row.weekend_price) : null
+    }));
+    
     res.json({
       success: true,
-      data: rows
+      data: transformedRows
     });
   } catch (error) {
     console.error('Error fetching rooms list:', error);
